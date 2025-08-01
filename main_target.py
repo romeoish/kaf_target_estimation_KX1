@@ -21,10 +21,11 @@ from starlette.middleware import Middleware
 
 ##### ===================== KS-2 연신&방사 feature를 활용한 target 값 예측 =====================
 
+# 수정된 targets: 모델 훈련 시 사용된 컬럼명과 일치시킴
 targets = {
     'Denier': ['시스SP속도', '코어SP속도', 'FeedRoll속도(M6)', 'DS-1연신비'],
-    'Elongation': ['시스SP속도', '코어SP속도', 'FeedRoll속도(M6)', 'DS-1연신비', '원료'], 
-    'Tenacity': ['시스SP속도', '코어SP속도', 'FeedRoll속도(M6)', 'DS-1연신비', '원료'], 
+    'Elongation': ['시스SP속도', '코어SP속도', 'FeedRoll속도(M6)', 'DS-1연신비', '원료_encoded'], 
+    'Tenacity': ['시스SP속도', '코어SP속도', 'FeedRoll속도(M6)', 'DS-1연신비', '원료_encoded'], 
     'Cohesion': ["CrBox압력", "CrRoll압력", 'Bath온도', 'Steam분사',
                  'Can수', 'Cutter속도', 'DS-1연신비'],
     'TotalFinish': ['DS-3속도', 'Spray농도', 'Spray분사량','시스SP속도', '코어SP속도', 'FeedRoll속도(M6)', 'DS-1연신비']
@@ -72,11 +73,7 @@ def predict_KX_1_Y(features: FeatureInput_KX_1_Y):
     if os.path.exists(le_원료_path):
         le_원료 = joblib.load(le_원료_path)
     else:
-        # '원료' 컬럼이 필요한 타겟이 있다면 이 에러를 발생시켜야 합니다.
-        # 모든 타겟에 '원료'가 필수는 아니므로, 필요할 때만 에러를 발생시킬 수도 있습니다.
-        # 여기서는 미리 로드하는 방식이므로, 파일이 없으면 경고 또는 에러를 출력합니다.
         print(f"경고: '원료' LabelEncoder 파일이 없습니다: {le_원료_path}. '원료' 컬럼이 필요한 예측에서 문제가 발생할 수 있습니다.")
-
 
     for target, feature_cols in targets.items():
         model_path = os.path.join(model_dir, f"{target}_xgb_model.pkl")
@@ -86,23 +83,37 @@ def predict_KX_1_Y(features: FeatureInput_KX_1_Y):
         model = joblib.load(model_path)
 
         # 🎯 예측에 필요한 feature만 추출
-        # targets 딕셔너리의 feature_cols는 원본 컬럼명 (alias) 기준으로 되어있으므로,
-        # input_data (by_alias=True로 생성)에서 직접 추출합니다.
-        input_features = input_data[feature_cols].copy()
+        input_features = input_data.copy()
 
-        # ❗ 범주형 처리: '원료' 컬럼이 현재 target의 feature_cols에 포함되어 있는지 확인
-        if "원료" in feature_cols: # targets 딕셔너리에 '원료'가 포함된 경우
-            if "원료" in input_features.columns: # input_features DataFrame에 '원료' 컬럼이 실제로 있는지 확인
+        # ❗ 범주형 처리: '원료_encoded' 컬럼이 현재 target의 feature_cols에 포함되어 있는지 확인
+        if "원료_encoded" in feature_cols:
+            if "원료" in input_features.columns:
                 if le_원료 is not None:
-                    # '원료' 컬럼을 문자열로 변환 후 인코딩
-                    input_features["원료"] = le_원료.transform(input_features["원료"].astype(str))
+                    # '원료' 컬럼을 인코딩하고 '원료_encoded'로 저장
+                    try:
+                        input_features["원료_encoded"] = le_원료.transform(input_features["원료"].astype(str))
+                    except ValueError as e:
+                        # 알려지지 않은 카테고리가 있을 경우 처리
+                        print(f"경고: 알려지지 않은 '원료' 값이 있습니다: {e}")
+                        # 기본값으로 첫 번째 클래스를 사용하거나 에러를 발생시킬 수 있습니다
+                        input_features["원료_encoded"] = 0  # 또는 적절한 기본값
+                    
+                    # 원본 '원료' 컬럼 제거 (모델이 예상하지 않으므로)
+                    input_features = input_features.drop(columns=["원료"])
                 else:
-                    # '원료' LabelEncoder가 로드되지 않은 경우 에러 처리
                     raise RuntimeError("🔴 '원료' LabelEncoder가 로드되지 않아 '원료' 컬럼을 처리할 수 없습니다.")
             else:
-                raise ValueError("🔴 '원료' 컬럼이 targets에 지정되었으나, 입력 데이터에 없습니다.")
+                raise ValueError("🔴 '원료_encoded' 컬럼이 targets에 지정되었으나, 입력 데이터에 '원료' 컬럼이 없습니다.")
 
-        y_pred = model.predict(input_features)[0]
+        # 필요한 피처만 선택
+        try:
+            input_features_selected = input_features[feature_cols]
+        except KeyError as e:
+            missing_cols = [col for col in feature_cols if col not in input_features.columns]
+            raise ValueError(f"🔴 필요한 컬럼이 누락되었습니다: {missing_cols}")
+
+        # 예측 수행
+        y_pred = model.predict(input_features_selected)[0]
         results[target] = round(float(y_pred), 4)
 
     return {"prediction": results}

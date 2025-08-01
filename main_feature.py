@@ -32,7 +32,7 @@ print(f"Loading inverse models and LabelEncoders from: {MODEL_DIR}")
 
 for target_name in inverse_targets:
     # 모델 파일명은 final_inverse_model_로 시작하고 특수문자는 언더스코어로 변경
-    model_filename = os.path.join(MODEL_DIR, f'final_inverse_model_{target_name.replace("/", "_").replace(" ", "_")}.pkl')
+    model_filename = os.path.join(MODEL_DIR, f'final_inverse_model_{target_name}.pkl')
     if os.path.exists(model_filename):
         try:
             loaded_inverse_models[target_name] = joblib.load(model_filename)
