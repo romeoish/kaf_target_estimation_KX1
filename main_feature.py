@@ -180,7 +180,7 @@ def predict_inverse_conditions_simplified(inputs: InverseInput) -> Dict[str, flo
 
 # --- 5. API 엔드포인트 정의 ---
 
-@app.post("/KS-2", response_model=InverseOutput, summary="물성값 및 고정 조건 기반 역방향 조건 예측")
+@app.post("/KX-1", response_model=InverseOutput, summary="물성값 및 고정 조건 기반 역방향 조건 예측")
 async def direct_inverse_predict(inputs: InverseInput):
     """
     물성값(Denier, Elongation, Tenacity, Cohesion, TotalFinish)과 
